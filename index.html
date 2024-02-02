@@ -4,6 +4,7 @@
     <title>PDF Viewer - Conditional Page Rendering Based on Language and Local Parameter</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.6.347/pdf.min.js"></script>
     <style>
+        /* Tus estilos existentes */
         #pdf-render canvas {
             width: 100%;
             margin-bottom: 20px; /* Adds space between pages */
@@ -60,9 +61,22 @@
         return language.startsWith('es') ? 'carta-bold.pdf' : 'menu-bold.pdf';
     }
 
-    // Check for 'local' URL
+    // Function to check if we should render special pages based on Buenos Aires time
+    function shouldRenderSpecialPages() {
+        var now = new Date();
+        var buenosAiresTime = now.toLocaleString("en-US", { timeZone: "America/Argentina/Buenos_Aires" });
+        var localDate = new Date(buenosAiresTime);
+        var hours = localDate.getHours();
+        var minutes = localDate.getMinutes();
+        var day = localDate.getDay();
+
+        return (day === 4 || day === 5 || day === 6) && (hours > 18 || (hours === 18 && minutes >= 59));
+    }
+
+    // Check for 'local' URL parameter
     var localParam = getQueryParam('local');
     var startPage = localParam === 'favorita' ? 12 : 1;
+    var specialPages = [22, 23]; // Definir aquí las páginas especiales
     var omitPages = localParam === 'roca' ? [12,13,14,15,16,17,18,19,20,21,22] : localParam === 'favorita' ? [1,2,3,4,5,6,7,8,9,10,11] : [];
 
     // Determine which PDF to load based on device language
@@ -72,38 +86,33 @@
     var loadingTask = pdfjsLib.getDocument(pdfFile);
     loadingTask.promise.then(function(pdf) {
         console.log('PDF loaded');
-
-        // Get the total number of pages in the PDF
         var pageCount = pdf.numPages;
+        var pagesRendered = 0;
+        var specialPagesRendered = shouldRenderSpecialPages();
 
         // Loop over each page starting from startPage
         for (let pageNumber = 1; pageNumber <= pageCount; pageNumber++) {
             if (omitPages.includes(pageNumber)) continue; // Skip omitted pages
+            if (specialPages.includes(pageNumber) && !specialPagesRendered) continue; // Skip special pages if not time
 
             pdf.getPage(pageNumber).then(function(page) {
-                console.log('Page ' + pageNumber + ' loaded');
-                
+                // Render the page
                 var scale = window.innerWidth < 1024 ? 2 : 6; // Use a smaller scale on smaller screens
                 var viewport = page.getViewport({ scale: scale });
-
-                // Create a new canvas for each page
                 var canvas = document.createElement('canvas');
                 canvas.id = 'pdf-page-' + pageNumber;
                 document.getElementById('pdf-render').appendChild(canvas);
-                
                 var context = canvas.getContext('2d');
                 canvas.height = viewport.height;
                 canvas.width = viewport.width;
-
-                // Render the page
                 var renderContext = {
                     canvasContext: context,
                     viewport: viewport
                 };
                 page.render(renderContext).promise.then(function() {
                     console.log('Page ' + pageNumber + ' rendered');
-                    if (pageNumber === startPage) {
-                        // Only hide the loader after the first page is rendered
+                    pagesRendered++;
+                    if (pagesRendered === 1 || pagesRendered === pageCount - omitPages.length - (specialPagesRendered ? 0 : specialPages.length)) {
                         document.getElementById('pdf-render').style.display = 'block';
                         document.getElementById('loader').style.display = 'none';
                     }
